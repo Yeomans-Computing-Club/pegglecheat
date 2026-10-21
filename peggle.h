@@ -16,6 +16,10 @@ namespace Utilities {
 		return *reinterpret_cast<std::uint8_t*>(address + offset);
 	}
 
+	inline int ReadInt(std::uintptr_t address, std::uintptr_t offset) {
+		return *reinterpret_cast<int*>(address + offset);
+	}
+
 	inline void WriteFloat(std::uintptr_t address, std::uintptr_t offset, float value) {
 		*reinterpret_cast<float*>(address + offset) = value;
 	}
@@ -33,7 +37,8 @@ namespace Peggle {
 
 	namespace Board { 
 		inline constexpr std::uintptr_t Objects = 0x190; 
-		inline constexpr std::uintptr_t Balls = 0x19C; }
+		inline constexpr std::uintptr_t Balls = 0x19C;
+		inline constexpr std::uintptr_t Height = 0x1B4; }
 
 	namespace PegList {
 		// is a std::list
@@ -77,7 +82,7 @@ namespace Peggle {
 		Vec2 nearestPegVector = { 0, 0 };
 		float nearestPegDistance = FLT_MAX;
 
-		// traversing the list
+		// the ugliest linked list traversal of all time
 		std::uintptr_t head = Utilities::ReadPtr(GetBoard() + Board::Objects, PegList::Head);
 		for (std::uintptr_t node = Utilities::ReadPtr(head, Node::Next); node != head; node = Utilities::ReadPtr(node, Node::Next)) {
 			std::uintptr_t peg = Utilities::ReadPtr(node, Node::Value);
@@ -98,6 +103,11 @@ namespace Peggle {
 		}
 		return nearestPegVector;
 	}
+
+	inline void PushBall(std::uintptr_t ball, Vec2 push) {
+		Utilities::WriteFloat(ball, PhysObj::VX, Utilities::ReadFloat(ball, PhysObj::VX) + push.x);
+		Utilities::WriteFloat(ball, PhysObj::VY, Utilities::ReadFloat(ball, PhysObj::VY) + push.y);
+	}
 }
 
 namespace Hooks {
@@ -112,11 +122,23 @@ namespace Hooks {
 
 	// FUN_0047A450 - ball update
 	// void __fastcall FUN_0047A450(int param_1)
-	inline void _fastcall HookedBallUpdate(std::uintptr_t ball, std::uintptr_t edx) {
+	typedef void(__fastcall* BallUpdateFn)(std::uintptr_t ball, std::uintptr_t edx);
+	inline BallUpdateFn OriginalBallUpdate;
 
+	inline void _fastcall HookedBallUpdate(std::uintptr_t ball, std::uintptr_t edx) {
 		// edx is just a dummy that we don't need to use.
 		// it is there because the compiler will not let us write a _thiscall here
 
-		// override ball update here
+		Peggle::Vec2 toPeg = Peggle::GetVectorToNearestPeg(ball);
+		Peggle::PushBall(ball, { toPeg.x * 0.01f, toPeg.y * 0.01f });
+
+		// if we haven't hit all the pegs, don't let the ball go off the board
+		bool pegsLeft = toPeg.x != 0 || toPeg.y != 0;
+		float height = (float)Utilities::ReadInt(Peggle::GetBoard(), Peggle::Board::Height);
+		float vy = Utilities::ReadFloat(ball, Peggle::PhysObj::VY);
+		if (pegsLeft && Utilities::ReadFloat(ball, Peggle::PhysObj::Y) > height && vy > 0)
+			Utilities::WriteFloat(ball, Peggle::PhysObj::VY, -vy);
+
+		OriginalBallUpdate(ball, edx);
 	}
 }
