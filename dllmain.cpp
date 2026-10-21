@@ -14,7 +14,12 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         MH_Initialize();
 
         // hook the ball set vel
-        MH_CreateHook(reinterpret_cast<void*>(Peggle::BallSetVel), );
+        void* ballSetVelFn = reinterpret_cast<void*>(Utilities::ReadPtr(Peggle::BallSetVel, 0));
+        MH_CreateHook(ballSetVelFn, Hooks::HookedSetBallVelocity, NULL);
+
+        // and the ball update
+        void* ballUpdateFn = reinterpret_cast<void*>(Utilities::ReadPtr(Peggle::BallUpdate, 0));
+        MH_CreateHook(ballUpdateFn, Hooks::HookedBallUpdate, NULL);
 
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
