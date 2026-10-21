@@ -42,6 +42,8 @@ namespace Peggle {
 		inline constexpr std::uintptr_t Size = 0x8;
 	}
 
+	namespace PegInfo { inline constexpr std::uintptr_t Lit = 0x14; }
+
 	namespace Node { // a node in the linked list of pegs
 		inline constexpr std::uintptr_t Next = 0x0;
 		inline constexpr std::uintptr_t Value = 0x8;
@@ -82,6 +84,7 @@ namespace Peggle {
 
 			if (Utilities::ReadPtr(peg, PhysObj::PegInfo) == 0) continue;  // not a peg
 			if (Utilities::ReadByte(peg, PhysObj::Active) == 0) continue;  // despawned
+			if (Utilities::ReadByte(Utilities::ReadPtr(peg, PhysObj::PegInfo), 0x14) != 0) continue;  // already hit
 
 			float pegX = (Utilities::ReadFloat(peg, PhysObj::MinX) + Utilities::ReadFloat(peg, PhysObj::MaxX)) / 2;
 			float pegY = (Utilities::ReadFloat(peg, PhysObj::MinY) + Utilities::ReadFloat(peg, PhysObj::MaxY)) / 2;
@@ -99,18 +102,21 @@ namespace Peggle {
 
 namespace Hooks {
 
+	// seems like we might not need this one? delete this if we end up not using it
+	// for the background cloned world physics simulation we can override the gun's angle instead
 	// FUN_00475600 - set physobj velocity
 	// void __thiscall FUN_00475600(int param_1,undefined4 param_2,undefined4 param_3)
-	inline void _fastcall HookedSetBallVelocity(std::uintptr_t ball, std::uintptr_t edx) {
-		// edx is just a dummy that we don't need to use.
-		// it is there because the compiler will not let us write a _thiscall here
-
+	inline void _fastcall HookedBallSetVelocity(std::uintptr_t ball, std::uintptr_t edx) {
 		// override ball velocity here
 	}
 
 	// FUN_0047A450 - ball update
 	// void __fastcall FUN_0047A450(int param_1)
 	inline void _fastcall HookedBallUpdate(std::uintptr_t ball, std::uintptr_t edx) {
+
+		// edx is just a dummy that we don't need to use.
+		// it is there because the compiler will not let us write a _thiscall here
+
 		// override ball update here
 	}
 }

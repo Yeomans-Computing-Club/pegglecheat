@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="pegglecheat.vcxproj" />
+  <Project Path="pegglecheat.vcxproj" Id="c107b4f9-57e8-4240-b9f1-97d4737b89e4" />
 </Solution>
