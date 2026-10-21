@@ -111,15 +111,6 @@ namespace Peggle {
 }
 
 namespace Hooks {
-
-	// seems like we might not need this one? delete this if we end up not using it
-	// for the background cloned world physics simulation we can override the gun's angle instead
-	// FUN_00475600 - set physobj velocity
-	// void __thiscall FUN_00475600(int param_1,undefined4 param_2,undefined4 param_3)
-	inline void _fastcall HookedBallSetVelocity(std::uintptr_t ball, std::uintptr_t edx) {
-		// override ball velocity here
-	}
-
 	// FUN_0047A450 - ball update
 	// void __fastcall FUN_0047A450(int param_1)
 	typedef void(__fastcall* BallUpdateFn)(std::uintptr_t ball, std::uintptr_t edx);
