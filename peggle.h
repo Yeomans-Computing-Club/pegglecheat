@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <cfloat>
 
 namespace Utilities {
 
@@ -12,60 +11,26 @@ namespace Utilities {
 		return *reinterpret_cast<float*>(address + offset);
 	}
 
-	inline std::uint8_t ReadByte(std::uintptr_t address, std::uintptr_t offset) {
-		return *reinterpret_cast<std::uint8_t*>(address + offset);
-	}
-
-	inline int ReadInt(std::uintptr_t address, std::uintptr_t offset) {
-		return *reinterpret_cast<int*>(address + offset);
-	}
-
 	inline void WriteFloat(std::uintptr_t address, std::uintptr_t offset, float value) {
 		*reinterpret_cast<float*>(address + offset) = value;
+	}
+
+	inline void WriteByte(std::uintptr_t address, std::uintptr_t offset, std::uint8_t value) {
+		*reinterpret_cast<std::uint8_t*>(address + offset) = value;
 	}
 }
 
 namespace Peggle {
 
 	inline constexpr std::uintptr_t GameBase = 0x6873AC;
-	inline constexpr std::uintptr_t BallVTable = 0x5F19B4;
-	inline constexpr std::uintptr_t BallSetVel = BallVTable + 0x4C; // should contain 0x475600
-	inline constexpr std::uintptr_t BallUpdate = BallVTable + 0x58; // should contain 0x47A450
 
 	// OFFSETS
 	namespace Game { inline constexpr std::uintptr_t Board = 0x7B8; }
-
-	namespace Board { 
-		inline constexpr std::uintptr_t Objects = 0x190; 
-		inline constexpr std::uintptr_t Balls = 0x19C;
-		inline constexpr std::uintptr_t Height = 0x1B4; }
-
-	namespace PegList {
-		// is a std::list
-		// actually the peg list is all physics objects, not just pegs. oops
-		inline constexpr std::uintptr_t Head = 0x4;
-		inline constexpr std::uintptr_t Size = 0x8;
-	}
-
-	namespace PegInfo { inline constexpr std::uintptr_t Lit = 0x14; }
-
-	namespace Node { // a node in the linked list of pegs
-		inline constexpr std::uintptr_t Next = 0x0;
-		inline constexpr std::uintptr_t Value = 0x8;
-	}
-
-	namespace PhysObj {
-		inline constexpr std::uintptr_t MinX = 0x14;
-		inline constexpr std::uintptr_t MinY = 0x18;
-		inline constexpr std::uintptr_t MaxX = 0x1C;
-		inline constexpr std::uintptr_t MaxY = 0x20;
-		inline constexpr std::uintptr_t Active = 0x25;
-		inline constexpr std::uintptr_t PegInfo = 0xD0;
-		// x,y and vx,vy stuff is only for the ball, not valid on bricks
-		inline constexpr std::uintptr_t X = 0xEC;
-		inline constexpr std::uintptr_t Y = 0xF0;
-		inline constexpr std::uintptr_t VX = 0xFC;
-		inline constexpr std::uintptr_t VY = 0x100;
+	namespace Board { inline constexpr std::uintptr_t LogicMgr = 0x154; }
+	namespace LogicMgr {
+		inline constexpr std::uintptr_t AimAngle = 0xE0;  // the player's aim; the search sweeps around this
+		inline constexpr std::uintptr_t BestAngle = 0xE4; // written by the best shot search
+		inline constexpr std::uintptr_t AutoFire = 0xEC;  // the search sets this so the CPU fires; we fire ourselves
 	}
 
 	inline std::uintptr_t GetBoard() {
@@ -73,63 +38,65 @@ namespace Peggle {
 		return game ? Utilities::ReadPtr(game, Game::Board) : 0;
 	}
 
-	struct Vec2 { float x, y; };
+	// FUNCTIONS WE HOOK
+	inline constexpr std::uintptr_t GetTunableInt = 0x523C70;   // int GetTunableInt(int, key, defaultValue)
+	inline constexpr std::uintptr_t GetTunableFloat = 0x523CD0; // float GetTunableFloat(int, key, defaultValue)
+	inline constexpr std::uintptr_t FireGun = 0x484530;         // void __thiscall Gun::Fire(Ball** ballOut, int)
 
-	inline Vec2 GetVectorToNearestPeg(std::uintptr_t ball) {
-		float ballX = Utilities::ReadFloat(ball, PhysObj::X);
-		float ballY = Utilities::ReadFloat(ball, PhysObj::Y);
+	// the keys the Zen ball's search uses to look up how many angles to try, and how far apart
+	inline constexpr std::uintptr_t ZenSweepCountKey = 0x5EB9B4; // "AIMgr.cpp18", default 120
+	inline constexpr std::uintptr_t ZenSweepStepKey = 0x5EB978;  // "AIMgr.cpp19", default 0.001 radians
 
-		Vec2 nearestPegVector = { 0, 0 };
-		float nearestPegDistance = FLT_MAX;
+	// FUNCTIONS WE CALL
+	// void __thiscall LogicMgr::RunBestShotSearch(bool nudge) - the Zen ball's search, finishes in one frame
+	typedef void(__fastcall* RunBestShotSearchFn)(std::uintptr_t logicMgr, std::uintptr_t edx, bool nudge);
+	inline RunBestShotSearchFn RunBestShotSearch = (RunBestShotSearchFn)0x467B80;
 
-		// the ugliest linked list traversal of all time
-		std::uintptr_t head = Utilities::ReadPtr(GetBoard() + Board::Objects, PegList::Head);
-		for (std::uintptr_t node = Utilities::ReadPtr(head, Node::Next); node != head; node = Utilities::ReadPtr(node, Node::Next)) {
-			std::uintptr_t peg = Utilities::ReadPtr(node, Node::Value);
-
-			if (Utilities::ReadPtr(peg, PhysObj::PegInfo) == 0) continue;  // not a peg
-			if (Utilities::ReadByte(peg, PhysObj::Active) == 0) continue;  // despawned
-			if (Utilities::ReadByte(Utilities::ReadPtr(peg, PhysObj::PegInfo), 0x14) != 0) continue;  // already hit
-
-			float pegX = (Utilities::ReadFloat(peg, PhysObj::MinX) + Utilities::ReadFloat(peg, PhysObj::MaxX)) / 2;
-			float pegY = (Utilities::ReadFloat(peg, PhysObj::MinY) + Utilities::ReadFloat(peg, PhysObj::MaxY)) / 2;
-			float dist = (pegX - ballX) * (pegX - ballX) + (pegY - ballY) * (pegY - ballY);
-
-			// vector from the ball to the closest peg so far
-			if (dist < nearestPegDistance) {
-				nearestPegDistance = dist;
-				nearestPegVector = { pegX - ballX, pegY - ballY };
-			}
-		}
-		return nearestPegVector;
-	}
-
-	inline void PushBall(std::uintptr_t ball, Vec2 push) {
-		Utilities::WriteFloat(ball, PhysObj::VX, Utilities::ReadFloat(ball, PhysObj::VX) + push.x);
-		Utilities::WriteFloat(ball, PhysObj::VY, Utilities::ReadFloat(ball, PhysObj::VY) + push.y);
-	}
+	// void __thiscall Gun::SetAngle(float angle, bool) - the Zen ball passes true
+	typedef void(__fastcall* SetGunAngleFn)(std::uintptr_t gun, std::uintptr_t edx, float angle, bool unknown);
+	inline SetGunAngleFn SetGunAngle = (SetGunAngleFn)0x4843A0;
 }
 
 namespace Hooks {
-	// FUN_0047A450 - ball update
-	// void __fastcall FUN_0047A450(int param_1)
-	typedef void(__fastcall* BallUpdateFn)(std::uintptr_t ball, std::uintptr_t edx);
-	inline BallUpdateFn OriginalBallUpdate;
+	// edx is just a dummy in the __fastcall hooks.
+	// it is there because the compiler will not let us write a _thiscall here
 
-	inline void _fastcall HookedBallUpdate(std::uintptr_t ball, std::uintptr_t edx) {
-		// edx is just a dummy that we don't need to use.
-		// it is there because the compiler will not let us write a _thiscall here
+	// gun angles: 0 points right, counterclockwise, so straight down is 270 degrees (3pi/2 radians).
+	// the gun can aim anywhere except the arc over the top from 7 to 173 degrees: 194 degrees, or +-1.693 radians around straight down.
+	// the Zen search tries +-120 angles 0.001 apart (+-7 degrees); we widen it to cover the gun's whole range.
+	inline float SweepStep = 0.002f;                     // smaller = finer search, but slower
+	inline int SweepCount = (int)(1.693f / SweepStep);  // angles on each side of straight down
 
-		Peggle::Vec2 toPeg = Peggle::GetVectorToNearestPeg(ball);
-		Peggle::PushBall(ball, { toPeg.x * 0.01f, toPeg.y * 0.01f });
+	typedef int(__cdecl* GetTunableIntFn)(int unused, std::uintptr_t key, int defaultValue);
+	inline GetTunableIntFn OriginalGetTunableInt;
 
-		// if we haven't hit all the pegs, don't let the ball go off the board
-		bool pegsLeft = toPeg.x != 0 || toPeg.y != 0;
-		float height = (float)Utilities::ReadInt(Peggle::GetBoard(), Peggle::Board::Height);
-		float vy = Utilities::ReadFloat(ball, Peggle::PhysObj::VY);
-		if (pegsLeft && Utilities::ReadFloat(ball, Peggle::PhysObj::Y) > height && vy > 0)
-			Utilities::WriteFloat(ball, Peggle::PhysObj::VY, -vy);
+	inline int __cdecl HookedGetTunableInt(int unused, std::uintptr_t key, int defaultValue) {
+		if (key == Peggle::ZenSweepCountKey) return SweepCount;
+		return OriginalGetTunableInt(unused, key, defaultValue);
+	}
 
-		OriginalBallUpdate(ball, edx);
+	typedef float(__cdecl* GetTunableFloatFn)(int unused, std::uintptr_t key, float defaultValue);
+	inline GetTunableFloatFn OriginalGetTunableFloat;
+
+	inline float __cdecl HookedGetTunableFloat(int unused, std::uintptr_t key, float defaultValue) {
+		if (key == Peggle::ZenSweepStepKey) return SweepStep;
+		return OriginalGetTunableFloat(unused, key, defaultValue);
+	}
+
+	// every shot: run the Zen search centered on straight down, aim the gun at the best angle, then fire
+	typedef void(__fastcall* FireGunFn)(std::uintptr_t gun, std::uintptr_t edx, std::uintptr_t ballOut, int unknown);
+	inline FireGunFn OriginalFireGun;
+
+	inline void __fastcall HookedFireGun(std::uintptr_t gun, std::uintptr_t edx, std::uintptr_t ballOut, int unknown) {
+		std::uintptr_t logicMgr = Utilities::ReadPtr(Peggle::GetBoard(), Peggle::Board::LogicMgr);
+		float playerAim = Utilities::ReadFloat(logicMgr, Peggle::LogicMgr::AimAngle);
+
+		Utilities::WriteFloat(logicMgr, Peggle::LogicMgr::AimAngle, 4.7124f); // straight down (270 degrees)
+		Peggle::RunBestShotSearch(logicMgr, 0, false);
+		Utilities::WriteFloat(logicMgr, Peggle::LogicMgr::AimAngle, playerAim);
+		Utilities::WriteByte(logicMgr, Peggle::LogicMgr::AutoFire, 0);
+		Peggle::SetGunAngle(gun, 0, Utilities::ReadFloat(logicMgr, Peggle::LogicMgr::BestAngle), true);
+
+		OriginalFireGun(gun, edx, ballOut, unknown);
 	}
 }

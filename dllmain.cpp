@@ -3,9 +3,6 @@
 #include "minhook.h"
 #include "peggle.h"
 
-// hooks
-void* ballUpdateFn = reinterpret_cast<void*>(Utilities::ReadPtr(Peggle::BallUpdate, 0));
-
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
                        LPVOID lpReserved
@@ -15,8 +12,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     {
     case DLL_PROCESS_ATTACH:
         MH_Initialize();
-        MH_CreateHook(ballUpdateFn, &Hooks::HookedBallUpdate, reinterpret_cast<void**>(&Hooks::OriginalBallUpdate));
-        //            ^ the target  ^ the hook                ^ the "trampoline" (lets us call the original function)
+        MH_CreateHook((void*)Peggle::GetTunableInt, &Hooks::HookedGetTunableInt, (void**)&Hooks::OriginalGetTunableInt);
+        //            ^ the target                  ^ the hook                   ^ the "trampoline" (lets us call the original function)
+        MH_CreateHook((void*)Peggle::GetTunableFloat, &Hooks::HookedGetTunableFloat, (void**)&Hooks::OriginalGetTunableFloat);
+        MH_CreateHook((void*)Peggle::FireGun, &Hooks::HookedFireGun, (void**)&Hooks::OriginalFireGun);
         MH_EnableHook(MH_ALL_HOOKS);
 
         break;
