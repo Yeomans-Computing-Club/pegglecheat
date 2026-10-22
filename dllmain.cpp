@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "minhook.h"
 #include "peggle.h"
+#include "bass.h"
 
 // hooks
 void* ballUpdateFn = reinterpret_cast<void*>(Utilities::ReadPtr(Peggle::BallUpdate, 0));
@@ -27,4 +28,3 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     }
     return TRUE;
 }
-
